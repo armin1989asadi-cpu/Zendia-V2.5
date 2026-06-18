@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { generatePersianSpeech, generatePersianSpeechStream, analyzeNewsFromUrl, askQuestionAboutContent, analyzeNewsFromTopic, analyzeDailyNews, rewriteText, getDetailedSupplementaryNews } from '../services/geminiService';
-import { generateElevenLabsSpeechStream, getTtsProvider } from '../services/elevenLabsService';
+import { generateElevenLabsSpeechStream, getTtsProvider, getElevenLabsApiKey } from '../services/elevenLabsService';
 import { decode, createWavBlob, concatPcmChunks } from '../utils/audioUtils';
 import { AppStatus, VoiceOption, ChatMessage, AnalysisStyle, SourceLink, CredibilityData, HistoryItem, RewriteStyle } from '../types';
 import { AudioVisualizer } from './AudioVisualizer';
@@ -387,13 +387,20 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({ onStatusChange, show
     const errStr = error.message || error.toString() || "";
     const status = error.status || error.statusCode || "";
 
+    // اگر خطا مربوط به ElevenLabs است، به checkAndShowQuotaError مربوط نمی‌شود — آن‌ها جداگانه handle می‌شوند.
+    const isElevenLabsError =
+      errStr.includes('ELEVENLABS_API_KEY_MISSING') ||
+      errStr.toLowerCase().includes('elevenlabs') ||
+      errStr.toLowerCase().includes('eleven labs');
+    if (isElevenLabsError) return false;
+
     const isInvalidOrMissingKey =
       errStr.includes("API_KEY_MISSING") ||
       errStr.toLowerCase().includes("api key") ||
       errStr.toLowerCase().includes("api_key_invalid") ||
       errStr.toLowerCase().includes("invalid api key") ||
-      status === 400 || status === 401 || status === 403 ||
-      errStr.includes("400") || errStr.includes("401") || errStr.includes("403") ||
+      status === 401 || status === 403 ||
+      errStr.includes("401") || errStr.includes("403") ||
       errStr.toLowerCase().includes("invalid_api_key") ||
       errStr.toLowerCase().includes("permission_denied") ||
       errStr.toLowerCase().includes("unauthenticated");
@@ -736,6 +743,15 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({ onStatusChange, show
 
   const handlePlayText = async (textToPlay: string, id: string) => {
       if (generatingId) return;
+
+      // بررسی سریع: اگر موتور ElevenLabs انتخاب شده ولی کلید API ثبت نشده، بلافاصله پیام نشان بده
+      if (getTtsProvider() === 'elevenlabs' && !getElevenLabsApiKey()) {
+        onShowQuotaError(
+          `کلید API الون‌لبز (ElevenLabs) تنظیم نشده است. لطفاً از بخش «تنظیمات تبدیل صوت» یک کلید API معتبر ElevenLabs وارد کنید، یا به موتور جیمینی سوئیچ کنید.`,
+          ""
+        );
+        return;
+      }
       
       // Reset any active SpeechSynthesis before playing
       if (typeof window !== 'undefined' && window.speechSynthesis) {
