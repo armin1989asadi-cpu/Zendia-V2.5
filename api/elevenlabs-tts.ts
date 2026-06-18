@@ -1,8 +1,8 @@
 // Vercel Edge Function: relays the ElevenLabs streaming TTS request server-to-server.
-// ElevenLabs' own documentation notes that calling their API directly from a browser
-// frontend can trigger a CORS error. Routing through this same-origin endpoint avoids
-// that entirely, and Edge Runtime lets us pass the upstream stream straight through
-// (no buffering), so the time-to-first-audio benefit of streaming is preserved.
+// NOTE: In this Vite project the browser calls ElevenLabs directly (ElevenLabs supports
+// CORS for browser requests), so this file is NOT used at runtime. It is kept here as a
+// server-side relay in case the project is ever deployed on a platform that needs it
+// (e.g. migrated to Next.js with server-side rendering).
 
 export const config = { runtime: 'edge' };
 

@@ -50,8 +50,9 @@ export const setElevenLabsVoiceId = (voiceId: string | null) => {
 };
 
 // --- Streaming speech generation ---
-// Calls ElevenLabs' streaming endpoint with output_format=pcm_24000 so the raw bytes are
-// already in the exact same format (16-bit PCM, 24kHz, mono) the app's WAV/playback utils expect.
+// Calls ElevenLabs' streaming endpoint directly from the browser.
+// ElevenLabs fully supports CORS for browser-side requests so no server proxy is needed.
+// output_format=pcm_24000 → raw 16-bit PCM, 24kHz, mono — identical to the Gemini path.
 export const generateElevenLabsSpeechStream = async (
   text: string,
   onChunk: (pcmBytes: Uint8Array) => void,
@@ -64,19 +65,37 @@ export const generateElevenLabsSpeechStream = async (
 
   const resolvedVoiceId = voiceId || getElevenLabsVoiceId();
 
-  // Routed through our own same-origin Vercel function (api/elevenlabs-tts.ts) instead of
-  // calling api.elevenlabs.io directly from the browser, since ElevenLabs' own docs note
-  // that direct frontend calls can trigger a CORS error.
-  const response = await fetch('/api/elevenlabs-tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, apiKey, voiceId: resolvedVoiceId }),
-  });
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${resolvedVoiceId}/stream?output_format=pcm_24000`,
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/pcm',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
+    }
+  );
 
   if (!response.ok) {
     let detail = '';
     try { detail = await response.text(); } catch { /* ignore */ }
     const err: any = new Error(`ElevenLabs API error (${response.status}): ${detail || response.statusText}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  // Guard: if ElevenLabs returned JSON (error payload) instead of a PCM stream, surface a clear message.
+  const contentType = response.headers.get('Content-Type') || '';
+  if (contentType.includes('application/json')) {
+    let detail = '';
+    try { detail = await response.text(); } catch { /* ignore */ }
+    const err: any = new Error(`ElevenLabs returned an error payload: ${detail}`);
     err.status = response.status;
     throw err;
   }
